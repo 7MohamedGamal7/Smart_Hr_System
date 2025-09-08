@@ -37,6 +37,14 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'accounts'
+    'attendance'
+    'dashboard'
+    'employees'
+    'hr'
+    'payroll'
+    'settings_app'
+       
 ]
 
 MIDDLEWARE = [
@@ -54,7 +62,7 @@ ROOT_URLCONF = 'Smart_Hr_system.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -73,11 +81,19 @@ WSGI_APPLICATION = 'Smart_Hr_system.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    "default": {
+        "ENGINE": "mssql",
+        "NAME": "HR_System",          # اسم قاعدة البيانات (كما في ملف الـSQL)
+        "USER": "admin",                 # أو اسم حساب الـSQL Server الخاص بك
+        "PASSWORD": "hgslduhgfwdv",  # كلمة المرور
+        "HOST": "ELDAWLIYA-SYSTE",          # إذا كان الخادم على نفس الجهاز
+        "PORT": "1433",               # المنفذ الافتراضي
+        "OPTIONS": {
+            "driver": "ODBC Driver 17 for SQL Server",   # تأكد من اسم الـdriver المثبت
+        },
+    },
 }
+
 
 
 # Password validation
