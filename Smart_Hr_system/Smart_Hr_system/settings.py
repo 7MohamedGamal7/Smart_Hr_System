@@ -37,14 +37,28 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'accounts'
-    'attendance'
-    'dashboard'
-    'employees'
-    'hr'
-    'payroll'
-    'settings_app'
-       
+    'accounts',
+    'attendance',
+    'dashboard',
+    'Department',
+    'EmpDocument',
+    'EmpHealthInsurance',
+    'EmpLoan',
+    'employees',
+    'EmpNote',
+    'EmpSocialInsurance',
+    'EmpTasks',
+    'EmpTermination',
+    'EmpTransport',
+    'EmpViolation',
+    'Evaluation',
+    'hr',
+    'Jops',
+    'payroll',
+    'settings_app',
+    'setup',
+    'vacations',
+
 ]
 
 MIDDLEWARE = [
