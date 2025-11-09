@@ -1,0 +1,697 @@
+/*==============================================================*/
+/*  HR System – Full Re-structure Script                        */
+/*  Compatible with SQL Server 2016+                            */
+/*==============================================================*/
+USE master;
+GO
+IF DB_ID('HR_System') IS NOT NULL
+    ALTER DATABASE HR_System SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+GO
+CREATE DATABASE HR_System;
+GO
+ALTER DATABASE HR_System SET RECOVERY SIMPLE;
+GO
+USE HR_System;
+GO
+-- إعدادات عامة
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
+--================================================================
+-- 1) جدول الشركات والفروع
+--================================================================
+CREATE TABLE Setup_Company
+(
+    Company_ID          INT IDENTITY(1,1) CONSTRAINT PK_Company PRIMARY KEY,
+    Company_Code        NVARCHAR(10)  NOT NULL UNIQUE,
+    Company_Name_AR     NVARCHAR(100) NOT NULL,
+    Company_Name_EN     NVARCHAR(100) NULL,
+    Commercial_Record   NVARCHAR(50)  NULL,
+    Tax_Number          NVARCHAR(30)  NULL,
+    Phone1              NVARCHAR(20)  NULL,
+    Phone2              NVARCHAR(20)  NULL,
+    Email               NVARCHAR(100) NULL,
+    Website             NVARCHAR(100) NULL,
+    Country             NVARCHAR(50)  NULL,
+    Governorate         NVARCHAR(50)  NULL,
+    City                NVARCHAR(50)  NULL,
+    District            NVARCHAR(50)  NULL,
+    Street              NVARCHAR(100) NULL,
+    Building_No         NVARCHAR(20)  NULL,
+    Logo                VARBINARY(MAX) NULL,
+    Is_Active           BIT           NOT NULL CONSTRAINT DF_Company_IsActive DEFAULT(1),
+    Created_By          INT           NOT NULL,
+    Created_Date        DATETIME      NOT NULL CONSTRAINT DF_Company_CreatedDate DEFAULT(GETDATE()),
+    Modified_By         INT           NULL,
+    Modified_Date       DATETIME      NULL
+);
+GO
+--================================================================
+-- 2) جدول الأقسام الرئيسية والفرعية
+--================================================================
+CREATE TABLE Setup_Department
+(
+    Dept_ID         INT IDENTITY(1,1) CONSTRAINT PK_Department PRIMARY KEY,
+    Company_ID      INT NOT NULL CONSTRAINT FK_Dept_Company REFERENCES Setup_Company(Company_ID),
+    Parent_Dept_ID  INT NULL CONSTRAINT FK_Dept_Parent REFERENCES Setup_Department(Dept_ID),
+    Dept_Code       NVARCHAR(20) NOT NULL,
+    Dept_Name_AR    NVARCHAR(100) NOT NULL,
+    Dept_Name_EN    NVARCHAR(100) NULL,
+    Manager_Emp_ID  INT NULL, -- يُحدَّث لاحقاً بعد إنشاء Employee
+    Is_Active       BIT NOT NULL CONSTRAINT DF_Dept_IsActive DEFAULT(1),
+    Created_By      INT NOT NULL,
+    Created_Date    DATETIME NOT NULL CONSTRAINT DF_Dept_CreatedDate DEFAULT(GETDATE()),
+    Modified_By     INT NULL,
+    Modified_Date   DATETIME NULL,
+    CONSTRAINT UX_Dept_Code UNIQUE (Company_ID, Dept_Code)
+);
+GO
+--================================================================
+-- 3) جدول الوظائف
+--================================================================
+CREATE TABLE Setup_Job
+(
+    Job_ID          INT IDENTITY(1,1) CONSTRAINT PK_Job PRIMARY KEY,
+    Company_ID      INT NOT NULL CONSTRAINT FK_Job_Company REFERENCES Setup_Company(Company_ID),
+    Job_Code        NVARCHAR(20) NOT NULL,
+    Job_Name_AR     NVARCHAR(100) NOT NULL,
+    Job_Name_EN     NVARCHAR(100) NULL,
+    Job_Description NVARCHAR(500) NULL,
+    Min_Salary      DECIMAL(18,2) NULL,
+    Max_Salary      DECIMAL(18,2) NULL,
+    Is_Active       BIT NOT NULL CONSTRAINT DF_Job_IsActive DEFAULT(1),
+    Created_By      INT NOT NULL,
+    Created_Date    DATETIME NOT NULL CONSTRAINT DF_Job_CreatedDate DEFAULT(GETDATE()),
+    Modified_By     INT NULL,
+    Modified_Date   DATETIME NULL,
+    CONSTRAINT UX_Job_Code UNIQUE (Company_ID, Job_Code)
+);
+GO
+--================================================================
+-- 4) جدول الموظفين الأساسي
+--================================================================
+CREATE TABLE HR_Employee
+(
+    Emp_ID              INT IDENTITY(1,1) CONSTRAINT PK_Employee PRIMARY KEY,
+    Emp_Code            NVARCHAR(20) NOT NULL UNIQUE,
+    First_Name_AR       NVARCHAR(50) NOT NULL,
+    Second_Name_AR      NVARCHAR(50) NOT NULL,
+    Third_Name_AR       NVARCHAR(50) NULL,
+    Last_Name_AR        NVARCHAR(50) NOT NULL,
+    Full_Name_AR        AS (TRIM(First_Name_AR)+' '+TRIM(Second_Name_AR)+' '+ISNULL(TRIM(Third_Name_AR)+' ','')+TRIM(Last_Name_AR)),
+    First_Name_EN       NVARCHAR(50) NULL,
+    Second_Name_EN      NVARCHAR(50) NULL,
+    Third_Name_EN       NVARCHAR(50) NULL,
+    Last_Name_EN        NVARCHAR(50) NULL,
+    Full_Name_EN        AS (TRIM(First_Name_EN)+' '+TRIM(Second_Name_EN)+' '+ISNULL(TRIM(Third_Name_EN)+' ','')+TRIM(Last_Name_EN)),
+    Date_Birth          DATE NULL,
+    Gender              CHAR(1) CONSTRAINT CK_Emp_Gender CHECK (Gender IN ('M','F')),
+    Nationality         NVARCHAR(50) NULL,
+    National_ID         NVARCHAR(14) NULL,
+    Personal_ID_Expiry  DATE NULL,
+    Marital_Status      NVARCHAR(30) CONSTRAINT CK_Emp_Marital CHECK (Marital_Status IN ('Single','Married','Divorced','Widowed')),
+    Military_Status     NVARCHAR(30) NULL,
+    Phone1              NVARCHAR(20) NULL,
+    Phone2              NVARCHAR(20) NULL,
+    Email_Personal      NVARCHAR(100) NULL,
+    Email_Official      NVARCHAR(100) NULL,
+    Address_Country     NVARCHAR(50) NULL,
+    Address_Governorate NVARCHAR(50) NULL,
+    Address_City        NVARCHAR(50) NULL,
+    Address_Street      NVARCHAR(200) NULL,
+    Emergency_Contact   NVARCHAR(100) NULL,
+    Emergency_Phone     NVARCHAR(20) NULL,
+    Has_Special_Needs   BIT NULL CONSTRAINT DF_Emp_SpecialNeeds DEFAULT(0),
+    Notes               NVARCHAR(500) NULL,
+    Is_Active           BIT NOT NULL CONSTRAINT DF_Emp_IsActive DEFAULT(1),
+    Created_By          INT NOT NULL,
+    Created_Date        DATETIME NOT NULL CONSTRAINT DF_Emp_CreatedDate DEFAULT(GETDATE()),
+    Modified_By         INT NULL,
+    Modified_Date       DATETIME NULL
+);
+GO
+--================================================================
+-- 5) جدول تعيينات الموظفين (تاريخي)
+--================================================================
+CREATE TABLE HR_Employee_Assignment
+(
+    Assignment_ID       INT IDENTITY(1,1) CONSTRAINT PK_EmpAssignment PRIMARY KEY,
+    Emp_ID              INT NOT NULL CONSTRAINT FK_EmpAssign_Emp REFERENCES HR_Employee(Emp_ID),
+    Company_ID          INT NOT NULL CONSTRAINT FK_EmpAssign_Company REFERENCES Setup_Company(Company_ID),
+    Dept_ID             INT NOT NULL CONSTRAINT FK_EmpAssign_Dept REFERENCES Setup_Department(Dept_ID),
+    Job_ID              INT NOT NULL CONSTRAINT FK_EmpAssign_Job REFERENCES Setup_Job(Job_ID),
+    Direct_Manager_ID   INT NULL CONSTRAINT FK_EmpAssign_Manager REFERENCES HR_Employee(Emp_ID),
+    Employment_Type     NVARCHAR(30) CONSTRAINT CK_EmpAssign_Type CHECK (Employment_Type IN ('Permanent','Temporary','Contract','Internship','PartTime')),
+    Hiring_Date         DATE NOT NULL,
+    Probation_Months    INT CONSTRAINT DF_EmpAssign_Probation DEFAULT(3),
+    Probation_End_Date  AS (DATEADD(MONTH,Probation_Months,Hiring_Date)),
+    Contract_Start      DATE NULL,
+    Contract_End        DATE NULL,
+    Basic_Salary        DECIMAL(18,2) NOT NULL,
+    Currency            NVARCHAR(3) CONSTRAINT DF_EmpAssign_Currency DEFAULT('EGP'),
+    Shift_Type          NVARCHAR(30) NULL, -- Morning, Night, …
+    Current_Week_Shift  NVARCHAR(50) NULL,
+    Next_Week_Shift     NVARCHAR(50) NULL,
+    Friday_Operation    NVARCHAR(50) NULL,
+    Is_Current          BIT NOT NULL CONSTRAINT DF_EmpAssign_IsCurrent DEFAULT(1),
+    Created_By          INT NOT NULL,
+    Created_Date        DATETIME NOT NULL CONSTRAINT DF_EmpAssign_CreatedDate DEFAULT(GETDATE()),
+    Modified_By         INT NULL,
+    Modified_Date       DATETIME NULL
+);
+GO
+--================================================================
+-- 6) جدول أنواع الإجازات
+--================================================================
+CREATE TABLE Setup_Leave_Type
+(
+    Leave_Type_ID   INT IDENTITY(1,1) CONSTRAINT PK_LeaveType PRIMARY KEY,
+    Company_ID      INT NOT NULL CONSTRAINT FK_LeaveType_Company REFERENCES Setup_Company(Company_ID),
+    Leave_Code      NVARCHAR(20) NOT NULL,
+    Leave_Name_AR   NVARCHAR(100) NOT NULL,
+    Leave_Name_EN   NVARCHAR(100) NULL,
+    Paid_Unpaid     CHAR(1) CONSTRAINT CK_LeaveType_Paid CHECK (Paid_Unpaid IN ('P','U')),
+    Max_Days_Year   INT NOT NULL,
+    Carry_Forward   BIT NOT NULL CONSTRAINT DF_LeaveType_Carry DEFAULT(0),
+    Max_Carry       INT NULL,
+    Gender_Limit    CHAR(1) NULL CONSTRAINT CK_LeaveType_Gender CHECK (Gender_Limit IN ('M','F',NULL)), -- M: خاص بالذكور, F: الإناث
+    Is_Active       BIT NOT NULL CONSTRAINT DF_LeaveType_IsActive DEFAULT(1),
+    Created_By      INT NOT NULL,
+    Created_Date    DATETIME NOT NULL CONSTRAINT DF_LeaveType_CreatedDate DEFAULT(GETDATE()),
+    Modified_By     INT NULL,
+    Modified_Date   DATETIME NULL,
+    CONSTRAINT UX_LeaveType_Code UNIQUE (Company_ID, Leave_Code)
+);
+GO
+--================================================================
+-- 7) رصيد الإجازات السنوي للموظف
+--================================================================
+CREATE TABLE HR_Emp_Leave_Balance
+(
+    Balance_ID          INT IDENTITY(1,1) CONSTRAINT PK_EmpLeaveBalance PRIMARY KEY,
+    Emp_ID              INT NOT NULL CONSTRAINT FK_EmpLeaveBal_Emp REFERENCES HR_Employee(Emp_ID),
+    Leave_Type_ID       INT NOT NULL CONSTRAINT FK_EmpLeaveBal_Type REFERENCES Setup_Leave_Type(Leave_Type_ID),
+    Year                INT NOT NULL,
+    Opening_Balance     INT NOT NULL,
+    Consumed_Days       INT NOT NULL CONSTRAINT DF_EmpLeaveBal_Consumed DEFAULT(0),
+    Remaining_Balance   AS (Opening_Balance - Consumed_Days),
+    Carry_Forward_Days  INT NOT NULL CONSTRAINT DF_EmpLeaveBal_Carry DEFAULT(0),
+    Created_By          INT NOT NULL,
+    Created_Date        DATETIME NOT NULL CONSTRAINT DF_EmpLeaveBal_CreatedDate DEFAULT(GETDATE()),
+    Modified_By         INT NULL,
+    Modified_Date       DATETIME NULL,
+    CONSTRAINT UX_EmpLeaveBal UNIQUE (Emp_ID, Leave_Type_ID, Year)
+);
+GO
+--================================================================
+-- 8) طلبات/سجلات الإجازات
+--================================================================
+CREATE TABLE HR_Emp_Leave_Request
+(
+    Leave_Request_ID    INT IDENTITY(1,1) CONSTRAINT PK_LeaveRequest PRIMARY KEY,
+    Emp_ID              INT NOT NULL CONSTRAINT FK_LeaveReq_Emp REFERENCES HR_Employee(Emp_ID),
+    Leave_Type_ID       INT NOT NULL CONSTRAINT FK_LeaveReq_Type REFERENCES Setup_Leave_Type(Leave_Type_ID),
+    Start_Date          DATE NOT NULL,
+    End_Date            DATE NOT NULL,
+    Days_Count          INT NOT NULL,
+    Reason              NVARCHAR(500) NULL,
+    Contact_Phone       NVARCHAR(20) NULL,
+    Contact_Address     NVARCHAR(200) NULL,
+    Status              NVARCHAR(20) CONSTRAINT CK_LeaveReq_Status CHECK (Status IN ('Pending','Approved','Rejected','Cancelled')),
+    Approved_By         INT NULL CONSTRAINT FK_LeaveReq_Approver REFERENCES HR_Employee(Emp_ID),
+    Approved_Date       DATETIME NULL,
+    Rejection_Reason    NVARCHAR(500) NULL,
+    Created_By          INT NOT NULL,
+    Created_Date        DATETIME NOT NULL CONSTRAINT DF_LeaveReq_CreatedDate DEFAULT(GETDATE()),
+    Modified_By         INT NULL,
+    Modified_Date       DATETIME NULL
+);
+GO
+--================================================================
+-- 9) جدول الحضور والانصراف
+--================================================================
+CREATE TABLE HR_Attendance
+(
+    Attendance_ID   BIGINT IDENTITY(1,1) CONSTRAINT PK_Attendance PRIMARY KEY,
+    Emp_ID          INT NOT NULL CONSTRAINT FK_Att_Emp REFERENCES HR_Employee(Emp_ID),
+    Company_ID      INT NOT NULL CONSTRAINT FK_Att_Company REFERENCES Setup_Company(Company_ID),
+    Attendance_Date DATE NOT NULL,
+    Clock_In        TIME NULL,
+    Clock_Out       TIME NULL,
+    Shift_Code      NVARCHAR(20) NULL,
+    Work_Hours      AS (DATEDIFF(MINUTE,Clock_In,Clock_Out)),
+    Overtime_Hours  INT NULL,
+    Late_Minutes    INT NULL,
+    Early_Minutes   INT NULL,
+    Status          NVARCHAR(20) NULL, -- Present, Absent, Mission, …
+    Machine_IP      NVARCHAR(20) NULL,
+    Created_By      INT NOT NULL,
+    Created_Date    DATETIME NOT NULL CONSTRAINT DF_Att_CreatedDate DEFAULT(GETDATE()),
+    Modified_By     INT NULL,
+    Modified_Date   DATETIME NULL,
+    CONSTRAINT UX_Att UNIQUE (Emp_ID, Attendance_Date, Shift_Code)
+);
+GO
+--================================================================
+-- 10) أنواع السلف/الخصومات
+--================================================================
+CREATE TABLE Setup_Loan_Deduction_Type
+(
+    Type_ID         INT IDENTITY(1,1) CONSTRAINT PK_LoanType PRIMARY KEY,
+    Company_ID      INT NOT NULL CONSTRAINT FK_LoanType_Company REFERENCES Setup_Company(Company_ID),
+    Type_Code       NVARCHAR(20) NOT NULL,
+    Type_Name_AR    NVARCHAR(100) NOT NULL,
+    Type_Name_EN    NVARCHAR(100) NULL,
+    Is_Loan         BIT NOT NULL CONSTRAINT DF_LoanType_IsLoan DEFAULT(1), -- 1=سلفة, 0=خصم
+    Max_Amount      DECIMAL(18,2) NULL,
+    Max_Installment INT NULL,
+    Interest_Rate   DECIMAL(5,2) NULL,
+    Is_Active       BIT NOT NULL CONSTRAINT DF_LoanType_IsActive DEFAULT(1),
+    Created_By      INT NOT NULL,
+    Created_Date    DATETIME NOT NULL CONSTRAINT DF_LoanType_CreatedDate DEFAULT(GETDATE()),
+    Modified_By     INT NULL,
+    Modified_Date   DATETIME NULL,
+    CONSTRAINT UX_LoanType_Code UNIQUE (Company_ID, Type_Code)
+);
+GO
+--================================================================
+-- 11) السلف والخصومات
+--================================================================
+CREATE TABLE HR_Emp_Loan
+(
+    Loan_ID         INT IDENTITY(1,1) CONSTRAINT PK_EmpLoan PRIMARY KEY,
+    Emp_ID          INT NOT NULL CONSTRAINT FK_EmpLoan_Emp REFERENCES HR_Employee(Emp_ID),
+    Type_ID         INT NOT NULL CONSTRAINT FK_EmpLoan_Type REFERENCES Setup_Loan_Deduction_Type(Type_ID),
+    Request_Date    DATE NOT NULL,
+    Amount          DECIMAL(18,2) NOT NULL,
+    Installment_Count INT NOT NULL,
+    Interest_Rate   DECIMAL(5,2) NULL,
+    Monthly_Amount  AS (Amount / NULLIF(Installment_Count,0)),
+    Status          NVARCHAR(20) CONSTRAINT CK_EmpLoan_Status CHECK (Status IN ('Requested','Approved','Rejected','Paid','Stopped')),
+    Approved_By     INT NULL CONSTRAINT FK_EmpLoan_Approver REFERENCES HR_Employee(Emp_ID),
+    Approved_Date   DATETIME NULL,
+    First_Deduct_Date DATE NULL,
+    Created_By      INT NOT NULL,
+    Created_Date    DATETIME NOT NULL CONSTRAINT DF_EmpLoan_CreatedDate DEFAULT(GETDATE()),
+    Modified_By     INT NULL,
+    Modified_Date   DATETIME NULL
+);
+GO
+--================================================================
+-- 12) بنود المرتبات (استحقاق / استقطاع)
+--================================================================
+CREATE TABLE Setup_Payroll_Item
+(
+    Item_ID         INT IDENTITY(1,1) CONSTRAINT PK_PayrollItem PRIMARY KEY,
+    Company_ID      INT NOT NULL CONSTRAINT FK_PItem_Company REFERENCES Setup_Company(Company_ID),
+    Item_Code       NVARCHAR(20) NOT NULL,
+    Item_Name_AR    NVARCHAR(100) NOT NULL,
+    Item_Name_EN    NVARCHAR(100) NULL,
+    Item_Type       CHAR(1) CONSTRAINT CK_PItem_Type CHECK (Item_Type IN ('E','D')), -- E=earning, D=deduction
+    Calculation_Type NVARCHAR(30) NULL, -- Fixed, Percent, Formula
+    Default_Value   DECIMAL(18,2) NULL,
+    Taxable         BIT NOT NULL CONSTRAINT DF_PItem_Taxable DEFAULT(0),
+    Insurable       BIT NOT NULL CONSTRAINT DF_PItem_Insurable DEFAULT(0),
+    Is_Active       BIT NOT NULL CONSTRAINT DF_PItem_IsActive DEFAULT(1),
+    Created_By      INT NOT NULL,
+    Created_Date    DATETIME NOT NULL CONSTRAINT DF_PItem_CreatedDate DEFAULT(GETDATE()),
+    Modified_By     INT NULL,
+    Modified_Date   DATETIME NULL,
+    CONSTRAINT UX_PItem_Code UNIQUE (Company_ID, Item_Code)
+);
+GO
+--================================================================
+-- 13) أنواع التقييم
+--================================================================
+CREATE TABLE Setup_Evaluation_Type
+(
+    Eval_Type_ID    INT IDENTITY(1,1) CONSTRAINT PK_EvalType PRIMARY KEY,
+    Company_ID      INT NOT NULL CONSTRAINT FK_EvalType_Company REFERENCES Setup_Company(Company_ID),
+    Eval_Code       NVARCHAR(20) NOT NULL,
+    Eval_Name_AR    NVARCHAR(100) NOT NULL,
+    Eval_Name_EN    NVARCHAR(100) NULL,
+    Frequency_Months INT NOT NULL CONSTRAINT DF_EvalType_Freq DEFAULT(12),
+    Is_Active       BIT NOT NULL CONSTRAINT DF_EvalType_IsActive DEFAULT(1),
+    Created_By      INT NOT NULL,
+    Created_Date    DATETIME NOT NULL CONSTRAINT DF_EvalType_CreatedDate DEFAULT(GETDATE()),
+    Modified_By     INT NULL,
+    Modified_Date   DATETIME NULL,
+    CONSTRAINT UX_EvalType_Code UNIQUE (Company_ID, Eval_Code)
+);
+GO
+--================================================================
+-- 14) تقييمات الموظفين
+--================================================================
+CREATE TABLE HR_Emp_Evaluation
+(
+    Evaluation_ID   INT IDENTITY(1,1) CONSTRAINT PK_EmpEval PRIMARY KEY,
+    Emp_ID          INT NOT NULL CONSTRAINT FK_EmpEval_Emp REFERENCES HR_Employee(Emp_ID),
+    Eval_Type_ID    INT NOT NULL CONSTRAINT FK_EmpEval_Type REFERENCES Setup_Evaluation_Type(Eval_Type_ID),
+    Eval_Date       DATE NOT NULL,
+    Eval_Period_From DATE NOT NULL,
+    Eval_Period_To  DATE NOT NULL,
+    Total_Score     DECIMAL(5,2) NULL,
+    Grade           NVARCHAR(10) NULL,
+    Recommendations NVARCHAR(500) NULL,
+    Status          NVARCHAR(20) CONSTRAINT CK_EmpEval_Status CHECK (Status IN ('Draft','Approved','Cancelled')),
+    Approved_By     INT NULL CONSTRAINT FK_EmpEval_Approver REFERENCES HR_Employee(Emp_ID),
+    Approved_Date   DATETIME NULL,
+    Created_By      INT NOT NULL,
+    Created_Date    DATETIME NOT NULL CONSTRAINT DF_EmpEval_CreatedDate DEFAULT(GETDATE()),
+    Modified_By     INT NULL,
+    Modified_Date   DATETIME NULL
+);
+GO
+--================================================================
+-- 15) بيانات العائلة
+--================================================================
+CREATE TABLE HR_Emp_Family
+(
+    Family_ID       INT IDENTITY(1,1) CONSTRAINT PK_EmpFamily PRIMARY KEY,
+    Emp_ID          INT NOT NULL CONSTRAINT FK_EmpFamily_Emp REFERENCES HR_Employee(Emp_ID),
+    Name_AR         NVARCHAR(100) NOT NULL,
+    Name_EN         NVARCHAR(100) NULL,
+    Relation        NVARCHAR(30) CONSTRAINT CK_Family_Relation CHECK (Relation IN ('Wife','Husband','Son','Daughter','Father','Mother')),
+    Date_Birth      DATE NULL,
+    National_ID     NVARCHAR(14) NULL,
+    Has_Insurance   BIT NULL CONSTRAINT DF_Family_Ins DEFAULT(0),
+    Notes           NVARCHAR(200) NULL,
+    Created_By      INT NOT NULL,
+    Created_Date    DATETIME NOT NULL CONSTRAINT DF_EmpFamily_CreatedDate DEFAULT(GETDATE()),
+    Modified_By     INT NULL,
+    Modified_Date   DATETIME NULL
+);
+GO
+--================================================================
+-- 16) ملاحظات الموظف
+--================================================================
+CREATE TABLE HR_Emp_Note
+(
+    Note_ID         BIGINT IDENTITY(1,1) CONSTRAINT PK_EmpNote PRIMARY KEY,
+    Emp_ID          INT NOT NULL CONSTRAINT FK_EmpNote_Emp REFERENCES HR_Employee(Emp_ID),
+    Note_Date       DATETIME NOT NULL,
+    Subject         NVARCHAR(200) NOT NULL,
+    Details         NVARCHAR(1000) NULL,
+    Severity        NVARCHAR(20) CONSTRAINT CK_Note_Severity CHECK (Severity IN ('Low','Medium','High','Critical')),
+    Created_By      INT NOT NULL,
+    Created_Date    DATETIME NOT NULL CONSTRAINT DF_EmpNote_CreatedDate DEFAULT(GETDATE()),
+    Modified_By     INT NULL,
+    Modified_Date   DATETIME NULL
+);
+GO
+--================================================================
+-- 17) جدول الرواتب الشهرية (رأس السجل)
+--================================================================
+CREATE TABLE Payroll_Header
+(
+    Payroll_ID      BIGINT IDENTITY(1,1) CONSTRAINT PK_Payroll PRIMARY KEY,
+    Company_ID      INT NOT NULL CONSTRAINT FK_Payroll_Company REFERENCES Setup_Company(Company_ID),
+    Payroll_Month   DATE NOT NULL, -- أول الشهر
+    Status          NVARCHAR(20) CONSTRAINT CK_Payroll_Status CHECK (Status IN ('Open','Closed','Posted')),
+    Processed_Date  DATETIME NULL,
+    Processed_By    INT NULL,
+    Notes           NVARCHAR(500) NULL,
+    Created_By      INT NOT NULL,
+    Created_Date    DATETIME NOT NULL CONSTRAINT DF_Payroll_CreatedDate DEFAULT(GETDATE()),
+    Modified_By     INT NULL,
+    Modified_Date   DATETIME NULL,
+    CONSTRAINT UX_Payroll UNIQUE (Company_ID, Payroll_Month)
+);
+GO
+--================================================================
+-- 18) تفاصيل المرتبات للموظفين
+--================================================================
+CREATE TABLE Payroll_Line
+(
+    Line_ID         BIGINT IDENTITY(1,1) CONSTRAINT PK_PayrollLine PRIMARY KEY,
+    Payroll_ID      BIGINT NOT NULL CONSTRAINT FK_PayrollLine_Header REFERENCES Payroll_Header(Payroll_ID),
+    Emp_ID          INT NOT NULL CONSTRAINT FK_PayrollLine_Emp REFERENCES HR_Employee(Emp_ID),
+    Item_ID         INT NOT NULL CONSTRAINT FK_PayrollLine_Item REFERENCES Setup_Payroll_Item(Item_ID),
+    Amount          DECIMAL(18,2) NOT NULL,
+    Notes           NVARCHAR(200) NULL,
+    Created_By      INT NOT NULL,
+    Created_Date    DATETIME NOT NULL CONSTRAINT DF_PayrollLine_CreatedDate DEFAULT(GETDATE()),
+    Modified_By     INT NULL,
+    Modified_Date   DATETIME NULL
+);
+GO
+--================================================================
+-- 19) السيارات والمواصلات
+--================================================================
+CREATE TABLE HR_Emp_Transport
+(
+    Transport_ID        INT IDENTITY(1,1) CONSTRAINT PK_EmpTransport PRIMARY KEY,
+    Emp_ID              INT NOT NULL CONSTRAINT FK_Transport_Emp REFERENCES HR_Employee(Emp_ID),
+    Car_Plate           NVARCHAR(20) NULL,
+    Car_Model           NVARCHAR(50) NULL,
+    Pickup_Point        NVARCHAR(200) NULL,
+    Pickup_Time         TIME NULL,
+    Drop_Time           TIME NULL,
+    Driver_Name         NVARCHAR(100) NULL,
+    Is_Active           BIT NOT NULL CONSTRAINT DF_Transport_IsActive DEFAULT(1),
+    Created_By          INT NOT NULL,
+    Created_Date        DATETIME NOT NULL CONSTRAINT DF_Transport_CreatedDate DEFAULT(GETDATE()),
+    Modified_By         INT NULL,
+    Modified_Date       DATETIME NULL
+);
+GO
+--================================================================
+-- 20) أنواع المستندات
+--================================================================
+CREATE TABLE Setup_Document_Type
+(
+    Doc_Type_ID     INT IDENTITY(1,1) CONSTRAINT PK_DocType PRIMARY KEY,
+    Company_ID      INT NOT NULL CONSTRAINT FK_DocType_Company REFERENCES Setup_Company(Company_ID),
+    Doc_Code        NVARCHAR(20) NOT NULL,
+    Doc_Name_AR     NVARCHAR(100) NOT NULL,
+    Doc_Name_EN     NVARCHAR(100) NULL,
+    Is_Mandatory    BIT NOT NULL CONSTRAINT DF_DocType_Mand DEFAULT(0),
+    Expiry_Alert_Days INT NULL,
+    Is_Active       BIT NOT NULL CONSTRAINT DF_DocType_IsActive DEFAULT(1),
+    Created_By      INT NOT NULL,
+    Created_Date    DATETIME NOT NULL CONSTRAINT DF_DocType_CreatedDate DEFAULT(GETDATE()),
+    Modified_By     INT NULL,
+    Modified_Date   DATETIME NULL,
+    CONSTRAINT UX_DocType_Code UNIQUE (Company_ID, Doc_Code)
+);
+GO
+--================================================================
+-- 21) مستندات الموظفين
+--================================================================
+CREATE TABLE HR_Emp_Document
+(
+    Doc_ID          BIGINT IDENTITY(1,1) CONSTRAINT PK_EmpDoc PRIMARY KEY,
+    Emp_ID          INT NOT NULL CONSTRAINT FK_EmpDoc_Emp REFERENCES HR_Employee(Emp_ID),
+    Doc_Type_ID     INT NOT NULL CONSTRAINT FK_EmpDoc_Type REFERENCES Setup_Document_Type(Doc_Type_ID),
+    Doc_Number      NVARCHAR(50) NULL,
+    Issue_Date      DATE NULL,
+    Expiry_Date     DATE NULL,
+    Remaining_Days  AS (DATEDIFF(DAY,GETDATE(),Expiry_Date)),
+    File_Attachment VARBINARY(MAX) NULL,
+    Is_Received     BIT NOT NULL CONSTRAINT DF_EmpDoc_Received DEFAULT(0),
+    Notes           NVARCHAR(200) NULL,
+    Created_By      INT NOT NULL,
+    Created_Date    DATETIME NOT NULL CONSTRAINT DF_EmpDoc_CreatedDate DEFAULT(GETDATE()),
+    Modified_By     INT NULL,
+    Modified_Date   DATETIME NULL
+);
+GO
+--================================================================
+-- 22) عقود العمل
+--================================================================
+CREATE TABLE HR_Contract
+(
+    Contract_ID         BIGINT IDENTITY(1,1) CONSTRAINT PK_Contract PRIMARY KEY,
+    Emp_ID              INT NOT NULL CONSTRAINT FK_Contract_Emp REFERENCES HR_Employee(Emp_ID),
+    Contract_No         NVARCHAR(30) NOT NULL UNIQUE,
+    Contract_Type       NVARCHAR(30) NULL, -- Limited, Unlimited
+    Start_Date          DATE NOT NULL,
+    End_Date            DATE NULL,
+    Duration_Months     INT NULL,
+    Renewal_Count       INT NOT NULL CONSTRAINT DF_Contract_Renew DEFAULT(0),
+    Salary_Basic        DECIMAL(18,2) NOT NULL,
+    Salary_Gross        DECIMAL(18,2) NOT NULL,
+    Notice_Period_Days  INT NULL,
+    Probation_Period    INT NULL,
+    Status              NVARCHAR(20) CONSTRAINT CK_Contract_Status CHECK (Status IN ('Draft','Signed','Cancelled','Expired')),
+    File_Attachment     VARBINARY(MAX) NULL,
+    Created_By          INT NOT NULL,
+    Created_Date        DATETIME NOT NULL CONSTRAINT DF_Contract_CreatedDate DEFAULT(GETDATE()),
+    Modified_By         INT NULL,
+    Modified_Date       DATETIME NULL
+);
+GO
+--================================================================
+-- 23) الجزاءات والمخالفات
+--================================================================
+CREATE TABLE Setup_Violation_Type
+(
+    Violation_ID    INT IDENTITY(1,1) CONSTRAINT PK_ViolationType PRIMARY KEY,
+    Company_ID      INT NOT NULL CONSTRAINT FK_Violation_Company REFERENCES Setup_Company(Company_ID),
+    Violation_Code  NVARCHAR(20) NOT NULL,
+    Violation_Name  NVARCHAR(100) NOT NULL,
+    Penalty_Type    NVARCHAR(30) NULL, -- Warning, Deduction, Suspend
+    Penalty_Days    INT NULL,
+    Penalty_Amount  DECIMAL(18,2) NULL,
+    Is_Active       BIT NOT NULL CONSTRAINT DF_Violation_IsActive DEFAULT(1),
+    Created_By      INT NOT NULL,
+    Created_Date    DATETIME NOT NULL CONSTRAINT DF_Violation_CreatedDate DEFAULT(GETDATE()),
+    Modified_By     INT NULL,
+    Modified_Date   DATETIME NULL,
+    CONSTRAINT UX_Violation_Code UNIQUE (Company_ID, Violation_Code)
+);
+GO
+CREATE TABLE HR_Emp_Violation
+(
+    Emp_Violation_ID    BIGINT IDENTITY(1,1) CONSTRAINT PK_EmpViolation PRIMARY KEY,
+    Emp_ID              INT NOT NULL CONSTRAINT FK_EmpViol_Emp REFERENCES HR_Employee(Emp_ID),
+    Violation_ID        INT NOT NULL CONSTRAINT FK_EmpViol_Type REFERENCES Setup_Violation_Type(Violation_ID),
+    Violation_Date      DATE NOT NULL,
+    Details             NVARCHAR(500) NULL,
+    Penalty_Executed    BIT NOT NULL CONSTRAINT DF_EmpViol_Exec DEFAULT(0),
+    Executed_Date       DATETIME NULL,
+    Created_By          INT NOT NULL,
+    Created_Date        DATETIME NOT NULL CONSTRAINT DF_EmpViol_CreatedDate DEFAULT(GETDATE()),
+    Modified_By         INT NULL,
+    Modified_Date       DATETIME NULL
+);
+GO
+--================================================================
+-- 24) التأمينات الاجتماعية
+--================================================================
+CREATE TABLE HR_Social_Insurance
+(
+    SI_ID               BIGINT IDENTITY(1,1) CONSTRAINT PK_SocialIns PRIMARY KEY,
+    Emp_ID              INT NOT NULL CONSTRAINT FK_SI_Emp REFERENCES HR_Employee(Emp_ID),
+    Insurance_No        NVARCHAR(30) NULL UNIQUE,
+    Form_S1_Received    BIT NOT NULL CONSTRAINT DF_SI_S1 DEFAULT(0),
+    Form_S1_Date        DATE NULL,
+    Form_S6_Received    BIT NOT NULL CONSTRAINT DF_SI_S6 DEFAULT(0),
+    Form_S6_Date        DATE NULL,
+    Subscription_Date   DATE NULL,
+    Subscription_Salary DECIMAL(18,2) NULL,
+    Employee_Percent    DECIMAL(5,2) NULL,
+    Company_Percent     DECIMAL(5,2) NULL,
+    Status              NVARCHAR(20) NULL,
+    Exit_Date           DATE NULL,
+    Exit_Reason         NVARCHAR(100) NULL,
+    Created_By          INT NOT NULL,
+    Created_Date        DATETIME NOT NULL CONSTRAINT DF_SI_CreatedDate DEFAULT(GETDATE()),
+    Modified_By         INT NULL,
+    Modified_Date       DATETIME NULL
+);
+GO
+--================================================================
+-- 25) التأمين الصحي
+--================================================================
+CREATE TABLE HR_Health_Insurance
+(
+    HI_ID               BIGINT IDENTITY(1,1) CONSTRAINT PK_HealthIns PRIMARY KEY,
+    Emp_ID              INT NOT NULL CONSTRAINT FK_HI_Emp REFERENCES HR_Employee(Emp_ID),
+    Provider            NVARCHAR(100) NULL,
+    Policy_No           NVARCHAR(30) NULL,
+    Card_No             NVARCHAR(30) NULL,
+    Start_Date          DATE NULL,
+    End_Date            DATE NULL,
+    Insurance_Job_Code  NVARCHAR(20) NULL,
+    Insurance_Job_Name  NVARCHAR(100) NULL,
+    Premium_Amount      DECIMAL(18,2) NULL,
+    Notes               NVARCHAR(200) NULL,
+    Created_By          INT NOT NULL,
+    Created_Date        DATETIME NOT NULL CONSTRAINT DF_HI_CreatedDate DEFAULT(GETDATE()),
+    Modified_By         INT NULL,
+    Modified_Date       DATETIME NULL
+);
+GO
+--================================================================
+-- 26) إعدادات عامة (مثال: أيام العمل، العطلات الرسمية)
+--================================================================
+CREATE TABLE Setup_Holiday
+(
+    Holiday_ID      INT IDENTITY(1,1) CONSTRAINT PK_Holiday PRIMARY KEY,
+    Company_ID      INT NOT NULL CONSTRAINT FK_Holiday_Company REFERENCES Setup_Company(Company_ID),
+    Holiday_Date    DATE NOT NULL,
+    Holiday_Name_AR NVARCHAR(100) NOT NULL,
+    Holiday_Name_EN NVARCHAR(100) NULL,
+    Is_Recurring    BIT NOT NULL CONSTRAINT DF_Holiday_Recur DEFAULT(0),
+    Created_By      INT NOT NULL,
+    Created_Date    DATETIME NOT NULL CONSTRAINT DF_Holiday_CreatedDate DEFAULT(GETDATE()),
+    CONSTRAINT UX_Holiday UNIQUE (Company_ID, Holiday_Date)
+);
+GO
+--================================================================
+-- 27) إنهاء الخدمة / استقالة
+--================================================================
+CREATE TABLE HR_Termination
+(
+    Termination_ID      BIGINT IDENTITY(1,1) CONSTRAINT PK_Termination PRIMARY KEY,
+    Emp_ID              INT NOT NULL CONSTRAINT FK_Term_Emp REFERENCES HR_Employee(Emp_ID),
+    Request_Date        DATE NOT NULL,
+    Last_Working_Date   DATE NOT NULL,
+    Reason_Type         NVARCHAR(30) NULL, -- Resignation, End of Contract, Termination
+    Reason_Details      NVARCHAR(500) NULL,
+    Notice_Period_Days  INT NULL,
+    Notice_End_Date     DATE NULL,
+    Settlement_Amount   DECIMAL(18,2) NULL,
+    Settlement_Paid     BIT NOT NULL CONSTRAINT DF_Term_Paid DEFAULT(0),
+    Created_By          INT NOT NULL,
+    Created_Date        DATETIME NOT NULL CONSTRAINT DF_Term_CreatedDate DEFAULT(GETDATE()),
+    Modified_By         INT NULL,
+    Modified_Date       DATETIME NULL
+);
+GO
+--================================================================
+-- 28) أسماء المستخدمين وصلاحياتهم (مبسّط)
+--================================================================
+CREATE TABLE Security_Users
+(
+    User_ID         INT IDENTITY(1,1) CONSTRAINT PK_Users PRIMARY KEY,
+    User_Name       NVARCHAR(50) NOT NULL UNIQUE,
+    Full_Name       NVARCHAR(100) NOT NULL,
+    Password_Hash   VARCHAR(64) NOT NULL,
+    Is_Active       BIT NOT NULL CONSTRAINT DF_User_IsActive DEFAULT(1),
+    Created_Date    DATETIME NOT NULL CONSTRAINT DF_User_CreatedDate DEFAULT(GETDATE())
+);
+GO
+--================================================================
+-- 29) ربط المستخدمين بالموظفين
+--================================================================
+ALTER TABLE HR_Employee ADD User_ID INT NULL
+    CONSTRAINT FK_Emp_User REFERENCES Security_Users(User_ID);
+GO
+--================================================================
+-- 30) فهرس تسريع شائع على الأرقام القومية
+--================================================================
+CREATE INDEX IX_Emp_NationalID ON HR_Employee(National_ID);
+GO
+--================================================================
+-- 31) تعبئة بسيطة لجدول الشركات
+--================================================================
+INSERT INTO Setup_Company
+(Company_Code, Company_Name_AR, Company_Name_EN, Created_By)
+VALUES
+(N'001', N'الدولية للصناعات', N'El-Dawliya Industries', 1);
+GO
+--================================================================
+-- 32) تعبئة بسيطة لجدول المستخدمين
+--================================================================
+INSERT INTO Security_Users
+(User_Name, Full_Name, Password_Hash)
+VALUES
+(N'admin', N'مدير النظام', HASHBYTES('SHA2_256','P@ssw0rd'));
+GO
+--================================================================
+-- 33) إفتراضياً نحدّث Manager_Emp_ID بعد إنشاء الموظفين
+--================================================================
+-- يمكن كتابة job بسيط أو trigger يحدّث هذا الحقل لاحقاً
+--================================================================
+-- 34) ملاحظات نهائية
+--================================================================
+-- 1) جميع الجداول تحتوي على حقول التتبع (Created_By, Created_Date, Modified_By, Modified_Date)
+-- 2) يمكنك إضافة المزيد من المؤشرات (Indexes) حسب حجم البيانات
+-- 3) يمكنك توسيع جداول التقارير أو إنشاء Views لتجميع الرواتب أو رصيد الإجازات
+-- 4) يمكنك إضافة Stored Procedures لحساب الرواتب أو التحديثات الدورية
+-- 5) يمكن ربط التامينات بجدول HR_Social_Insurance وHR_Health_Insurance مع الرواتب
+--================================================================
+PRINT 'HR System Database Created Successfully.';
+GO
